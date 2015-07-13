@@ -53,7 +53,6 @@ C_y = np.matrix(ycoords).T
 beta_y = np.linalg.lstsq(L_y, C_y)[0]
 
 
-
 class Convertor(object):
     def __init__(self, beta_x, beta_y):
         self.beta_x = beta_x
