@@ -61,3 +61,5 @@ class Convertor(object):
         return np.vstack([beta_x[0] + beta_x[1] * x, beta_y[0] + beta_y[1] * y])
 
 c = Convertor(beta_x, beta_y)
+
+
