@@ -54,12 +54,12 @@ beta_y = np.linalg.lstsq(L_y, C_y)[0]
 
 
 class Convertor(object):
-    def __init__(self, beta_x, beta_y):
-        self.beta_x = beta_x
-        self.beta_y = beta_y
+    def __init__(self, bx, by):
+        self.bx = bx
+        self.by = by
     def LonLat2Tiles(self, *, x, y):
-        return np.vstack([beta_x[0] + beta_x[1] * x, beta_y[0] + beta_y[1] * y])
+        return (self.bx[0] + self.bx[1] * x, self.by[0] + self.by[1] * y)
 
-c = Convertor(beta_x, beta_y)
+c = Convertor(beta_x.T.tolist()[0], beta_y.T.tolist()[0])
 
 

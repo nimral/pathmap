@@ -3,10 +3,12 @@ import subprocess
 import time
 import os.path
 from lxml import html
-from PIL import Image
-from math import floor
+from PIL import Image, ImageDraw
+from math import floor, sqrt
 
-import linreg
+
+def debug(*s):
+    print(*s)
 
 def url2dict(url):
     a, b = url.split("?", 1)
@@ -111,17 +113,108 @@ class TileDownloader(object):
         tiles_y1 = floor(y1)
         tiles_y2 = floor(y2)
 
-        xdiff = int(x1 - tiles_x1)
-        ydiff = int(y1 - tiles_y1)
+        xdiff_pix = int(self.xres * (x1 - tiles_x1))
+        ydiff_pix = int(self.yres * (y1 - tiles_y1))
 
         for y in range(tiles_y1, tiles_y2+1):
             for x in range(tiles_x1, tiles_x2+1):
                 im = self.get_tile(x, y)
-                big.paste(self.get_tile(x, y), ((x-tiles_x1) * self.xres - xdiff, (y-tiles_y1) * self.yres - ydiff))
+                big.paste(self.get_tile(x, y), ((x-tiles_x1) * self.xres - xdiff_pix, (y-tiles_y1) * self.yres - ydiff_pix))
 
         return big
             
         
+        
+    def path_surroundings(self, path, radius=100/256):
+        maxwidth_pix = 1000
+        maxheight_pix = 800
+        maxdist_pix = 500
+
+        def len_pix(ran):
+            return int((ran[1] - ran[0]) * self.xres)
+        def dist_pix(p, q):
+            return sqrt(((p[0] - q[0]) * self.xres) ** 2 + ((p[1] - q[1]) * self.xres) ** 2)
+        def draw_circle(draw, S, r, fill=1):
+            draw.ellipse((S[0] - r, S[1] - r, S[0] + r, S[1] + r), fill)
+
+        path = list(reversed(path))
+        while path:
+            bite = [path.pop()]
+            x_range = [bite[0][0] - radius, bite[0][0] + radius]
+            y_range = [bite[0][1] - radius, bite[0][1] + radius]
+
+            while path:
+                while dist_pix(bite[-1], path[-1]) > maxdist_pix:
+                    path.append(((bite[-1][0] + path[-1][0]) / 2, (bite[-1][1] + path[-1][1]) / 2))
+                    debug("sekani")
+
+                x_range2 = [0, 0]
+                y_range2 = [0, 0]
+                x_range2[0] = min(x_range[0], path[-1][0] - radius)
+                x_range2[1] = max(x_range[1], path[-1][0] + radius)
+                y_range2[0] = min(y_range[0], path[-1][1] - radius)
+                y_range2[1] = max(y_range[1], path[-1][1] + radius)
+                
+                if len_pix(x_range2) > maxwidth_pix or len_pix(y_range2) > maxheight_pix:
+                    path.append(bite[-1])
+                    debug("   moc dlouhe")
+                    break
+
+                bite.append(path.pop())
+                x_range = x_range2
+                y_range = y_range2
+
+            white = (255, 255, 255)
+            print("bite", bite)
+
+            big = Image.new("RGB", (len_pix(x_range), len_pix(y_range)), color=white)
+
+            last = bite[0]
+            for p in bite[1:]:
+
+                x1, _, _, x2 = sorted([last[0] - radius, last[0] + radius, p[0] - radius, p[0] + radius])
+                y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
+
+                im = self.get_rect(x1, y1, x2, y2)
+                print((x1, y1, x2, y2))
+                print(im.size, x1, y1, x2, y2)
+
+                mask = Image.new("1", im.size)
+                draw = ImageDraw.Draw(mask)
+
+                last_pix = [(last[0] - x1) * self.xres, (last[1] - y1) * self.yres]
+                p_pix = [(p[0] - x1) * self.xres, (p[1] - y1) * self.yres]
+
+                draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=int(2*radius*self.xres), fill=1)
+
+
+                draw_circle(draw, last_pix, radius * self.xres)
+                draw_circle(draw, p_pix, radius * self.xres)
+
+                del draw
+
+                
+                big.paste(im, (int((x1 - x_range[0]) * self.xres), int((y1 - y_range[0]) * self.yres)), mask=mask)
+
+                last = p
+
+            draw = ImageDraw.Draw(big)
+            last = bite[0]
+            for p in bite[1:]:
+                last_pix = [(last[0] - x_range[0]) * self.xres, (last[1] - y_range[0]) * self.yres]
+                p_pix = [(p[0] - x_range[0]) * self.xres, (p[1] - y_range[0]) * self.yres]
+                draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=3, fill=(255, 100, 0))
+                last = p
+            del draw
+
+
+            yield big
+
+
+                
+        
+        
+
         
         
         
