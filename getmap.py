@@ -5,6 +5,8 @@ import os.path
 from lxml import html
 from PIL import Image, ImageDraw
 from math import floor, sqrt
+#from latex import build_pdf
+import tempfile
 
 
 def debug(*s):
@@ -21,6 +23,15 @@ def url2dict(url):
 def run_js_file(filename):
     process = subprocess.Popen(["nodejs", filename], stdout=subprocess.PIPE)
     return process.communicate()[0].decode('utf8')
+
+def build_pdf(string, filename):
+    fd, tmp = tempfile.mkstemp()
+    with open(tmp, "w") as fout:
+        fout.write(string)
+
+    os.system("pdflatex " + tmp)
+    os.system("rm " + tmp)
+    os.system("mv " + os.path.basename(tmp) + ".pdf " + filename)
 
 
 class TileDownloader(object):
@@ -125,10 +136,7 @@ class TileDownloader(object):
             
         
         
-    def path_surroundings(self, path, radius=100/256):
-        maxwidth_pix = 1000
-        maxheight_pix = 800
-        maxdist_pix = 500
+    def path_surroundings(self, path, *, radius=130/256, maxwidth_pix=1000, maxheight_pix=800, maxdist_pix=500):
 
         def len_pix(ran):
             return int((ran[1] - ran[0]) * self.xres)
@@ -176,8 +184,8 @@ class TileDownloader(object):
                 y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
 
                 im = self.get_rect(x1, y1, x2, y2)
-                print((x1, y1, x2, y2))
-                print(im.size, x1, y1, x2, y2)
+                debug((x1, y1, x2, y2))
+                debug(im.size, x1, y1, x2, y2)
 
                 mask = Image.new("1", im.size)
                 draw = ImageDraw.Draw(mask)
@@ -211,11 +219,50 @@ class TileDownloader(object):
             yield big
 
 
+def create_path_pdf(parts, filename):
+    header = r'''
+        \documentclass[a4paper]{article}
+        \usepackage[top=0.5cm, bottom=0.5cm, left=0.5cm, right=0.5cm]{geometry}
+        \usepackage{graphicx}
+        \sloppy
+        \begin{document}
+    '''
+
+    tdir = tempfile.TemporaryDirectory()
+
+    fnames = []
+    for i, im in enumerate(parts):
+        fname = tdir.name + "/" + str(i) + ".png"
+        fnames.append(fname)
+        im.save(fname)
+        
+    images = "\n\n".join('\includegraphics[scale=0.5]{' + fname + '}' for fname in fnames)
+
+    footer = r'''
+        \end{document}
+    '''
+
+    #pdf = build_pdf(header + images + footer)
+    #pdf.save_to(filename)
+    
+    build_pdf(header + images + footer, filename)
+    print(header + images + footer, filename)
+
+    tdir.cleanup()
+                
+
                 
         
         
 
         
         
+def list_to_path(l, c):
+    for i in range(0, len(l), 2):
+        yield c.LonLat2Tiles(x=l[i+1], y=l[i])
+            
+
+
         
+g = TileDownloader()
 
