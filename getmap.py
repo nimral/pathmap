@@ -8,6 +8,9 @@ from math import floor, sqrt
 #from latex import build_pdf
 import tempfile
 
+from shapely.geometry import LineString
+from shapely import affinity
+
 
 def debug(*s):
     print(*s)
@@ -145,6 +148,31 @@ class TileDownloader(object):
         def draw_circle(draw, S, r, fill=1):
             draw.ellipse((S[0] - r, S[1] - r, S[0] + r, S[1] + r), fill)
 
+
+        def best_angle(bite, radius):
+            line = LineString(bite)
+            surroundings = line.buffer(radius)
+            
+            minheight = maxheight_pix / self.yres
+            best = 0
+            lowest_penalty = 1000
+            for angle in range(-90, 90, 5):
+                x1, y1, x2, y2 = affinity.rotate(surroundings, angle).bounds
+                height = y2 - y1
+                width = x2 - x1
+                if width < (maxwidth_pix / self.xres):
+                    penalty = height + abs(angle) / 100
+                    if penalty < lowest_penalty:
+                        lowest_penalty = penalty
+                        minheight = height
+                        best = angle
+
+            #maps and shapely differ in the directions of their y-axes
+            return -best
+                    
+                
+            
+
         path = list(reversed(path))
         while path:
             bite = [path.pop()]
@@ -215,6 +243,7 @@ class TileDownloader(object):
                 last = p
             del draw
 
+            big = big.rotate(best_angle(bite, radius), resample=Image.BILINEAR, expand=True)
 
             yield big
 
