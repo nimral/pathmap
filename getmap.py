@@ -4,11 +4,11 @@ import time
 import os.path
 from lxml import html
 from PIL import Image, ImageDraw
-from math import floor, sqrt
+from math import floor, sqrt, sin, cos, pi
 #from latex import build_pdf
 import tempfile
 
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 from shapely import affinity
 
 
@@ -170,6 +170,45 @@ class TileDownloader(object):
             #maps and shapely differ in the directions of their y-axes
             return -best
                     
+        def crop_after_rotation(im, angle, radius, bite):
+
+            line = LineString(bite)
+            surroundings = line.buffer(radius)
+
+            x1, y1, x2, y2 = surroundings.bounds
+            old_bb_upper_left = Point(x1, y1)
+            old_bb_upper_right = Point(x2, y1)
+            old_bb_bottom_left = Point(x1, y2)
+            old_bb_bottom_right = Point(x2, y2)
+            old_bb_center = ((x1+x2)/2, (y1+y2)/2)
+
+            shapely_angle = -angle
+
+            x1, y1, x2, y2 = affinity.rotate(surroundings, shapely_angle, origin=old_bb_center).bounds
+            crop_upper_left = Point(x1, y1)
+            crop_width = x2 - x1
+            crop_height = y2 - y1
+
+            p1 = None
+            p2 = None
+            if angle > 0:
+                p1 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+                p2 = affinity.rotate(old_bb_upper_right, shapely_angle, origin=old_bb_center)
+            else:
+                p1 = affinity.rotate(old_bb_bottom_left, shapely_angle, origin=old_bb_center)
+                p2 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+
+            b = (crop_upper_left.x - p1.x, crop_upper_left.y - p2.y)
+
+            crop_box = (int(self.xres * x) for x in (b[0], b[1], b[0] + crop_width, b[1] + crop_height))
+            cropped = im.crop(box=crop_box)
+            cropped.load()
+            return cropped
+
+
+
+
+            
                 
             
 
@@ -203,7 +242,7 @@ class TileDownloader(object):
             white = (255, 255, 255)
             print("bite", bite)
 
-            big = Image.new("RGB", (len_pix(x_range), len_pix(y_range)), color=white)
+            big = Image.new("RGBA", (len_pix(x_range), len_pix(y_range)), color=white)
 
             last = bite[0]
             for p in bite[1:]:
@@ -243,9 +282,13 @@ class TileDownloader(object):
                 last = p
             del draw
 
-            big = big.rotate(best_angle(bite, radius), resample=Image.BILINEAR, expand=True)
+            angle = best_angle(bite, radius)
+            big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
+            big = crop_after_rotation(big, angle, radius, bite)
+            big2 = Image.new("RGBA", big.size, "white")
+            big2.paste(big, mask=big)
 
-            yield big
+            yield big2
 
 
 def create_path_pdf(parts, filename):
