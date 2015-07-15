@@ -2,7 +2,10 @@ import requests
 import subprocess
 import time
 import os.path
+
 from lxml import html
+from lxml import etree
+
 from PIL import Image, ImageDraw
 from math import floor, sqrt, sin, cos, pi
 #from latex import build_pdf
@@ -138,157 +141,156 @@ class TileDownloader(object):
         return big
             
         
+def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_pix=800, maxdist_pix=500):
+
+    def len_pix(ran):
+        return int((ran[1] - ran[0]) * td.xres)
+    def dist_pix(p, q):
+        return sqrt(((p[0] - q[0]) * td.xres) ** 2 + ((p[1] - q[1]) * td.xres) ** 2)
+    def draw_circle(draw, S, r, fill=1):
+        draw.ellipse((S[0] - r, S[1] - r, S[0] + r, S[1] + r), fill)
+
+
+    def best_angle(bite, radius):
+        line = LineString(bite)
+        surroundings = line.buffer(radius)
         
-    def path_surroundings(self, path, *, radius=130/256, maxwidth_pix=1000, maxheight_pix=800, maxdist_pix=500):
+        minheight = maxheight_pix / td.yres
+        best = 0
+        lowest_penalty = 1000
+        for angle in range(-90, 90, 5):
+            x1, y1, x2, y2 = affinity.rotate(surroundings, angle).bounds
+            height = y2 - y1
+            width = x2 - x1
+            if width < (maxwidth_pix / td.xres):
+                penalty = height + abs(angle) / 100
+                if penalty < lowest_penalty:
+                    lowest_penalty = penalty
+                    minheight = height
+                    best = angle
 
-        def len_pix(ran):
-            return int((ran[1] - ran[0]) * self.xres)
-        def dist_pix(p, q):
-            return sqrt(((p[0] - q[0]) * self.xres) ** 2 + ((p[1] - q[1]) * self.xres) ** 2)
-        def draw_circle(draw, S, r, fill=1):
-            draw.ellipse((S[0] - r, S[1] - r, S[0] + r, S[1] + r), fill)
-
-
-        def best_angle(bite, radius):
-            line = LineString(bite)
-            surroundings = line.buffer(radius)
-            
-            minheight = maxheight_pix / self.yres
-            best = 0
-            lowest_penalty = 1000
-            for angle in range(-90, 90, 5):
-                x1, y1, x2, y2 = affinity.rotate(surroundings, angle).bounds
-                height = y2 - y1
-                width = x2 - x1
-                if width < (maxwidth_pix / self.xres):
-                    penalty = height + abs(angle) / 100
-                    if penalty < lowest_penalty:
-                        lowest_penalty = penalty
-                        minheight = height
-                        best = angle
-
-            #maps and shapely differ in the directions of their y-axes
-            return -best
-                    
-        def crop_after_rotation(im, angle, radius, bite):
-
-            line = LineString(bite)
-            surroundings = line.buffer(radius)
-
-            x1, y1, x2, y2 = surroundings.bounds
-            old_bb_upper_left = Point(x1, y1)
-            old_bb_upper_right = Point(x2, y1)
-            old_bb_bottom_left = Point(x1, y2)
-            old_bb_bottom_right = Point(x2, y2)
-            old_bb_center = ((x1+x2)/2, (y1+y2)/2)
-
-            shapely_angle = -angle
-
-            x1, y1, x2, y2 = affinity.rotate(surroundings, shapely_angle, origin=old_bb_center).bounds
-            crop_upper_left = Point(x1, y1)
-            crop_width = x2 - x1
-            crop_height = y2 - y1
-
-            p1 = None
-            p2 = None
-            if angle > 0:
-                p1 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
-                p2 = affinity.rotate(old_bb_upper_right, shapely_angle, origin=old_bb_center)
-            else:
-                p1 = affinity.rotate(old_bb_bottom_left, shapely_angle, origin=old_bb_center)
-                p2 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
-
-            b = (crop_upper_left.x - p1.x, crop_upper_left.y - p2.y)
-
-            crop_box = (int(self.xres * x) for x in (b[0], b[1], b[0] + crop_width, b[1] + crop_height))
-            cropped = im.crop(box=crop_box)
-            cropped.load()
-            return cropped
-
-
-
-
-            
+        #maps and shapely differ in the directions of their y-axes
+        return -best
                 
-            
+    def crop_after_rotation(im, angle, radius, bite):
 
-        path = list(reversed(path))
+        line = LineString(bite)
+        surroundings = line.buffer(radius)
+
+        x1, y1, x2, y2 = surroundings.bounds
+        old_bb_upper_left = Point(x1, y1)
+        old_bb_upper_right = Point(x2, y1)
+        old_bb_bottom_left = Point(x1, y2)
+        old_bb_bottom_right = Point(x2, y2)
+        old_bb_center = ((x1+x2)/2, (y1+y2)/2)
+
+        shapely_angle = -angle
+
+        x1, y1, x2, y2 = affinity.rotate(surroundings, shapely_angle, origin=old_bb_center).bounds
+        crop_upper_left = Point(x1, y1)
+        crop_width = x2 - x1
+        crop_height = y2 - y1
+
+        p1 = None
+        p2 = None
+        if angle > 0:
+            p1 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+            p2 = affinity.rotate(old_bb_upper_right, shapely_angle, origin=old_bb_center)
+        else:
+            p1 = affinity.rotate(old_bb_bottom_left, shapely_angle, origin=old_bb_center)
+            p2 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+
+        b = (crop_upper_left.x - p1.x, crop_upper_left.y - p2.y)
+
+        crop_box = (int(td.xres * x) for x in (b[0], b[1], b[0] + crop_width, b[1] + crop_height))
+        cropped = im.crop(box=crop_box)
+        cropped.load()
+        return cropped
+
+
+
+
+        
+            
+        
+
+    path = list(reversed(path))
+    while path:
+        bite = [path.pop()]
+        x_range = [bite[0][0] - radius, bite[0][0] + radius]
+        y_range = [bite[0][1] - radius, bite[0][1] + radius]
+
         while path:
-            bite = [path.pop()]
-            x_range = [bite[0][0] - radius, bite[0][0] + radius]
-            y_range = [bite[0][1] - radius, bite[0][1] + radius]
+            while dist_pix(bite[-1], path[-1]) > maxdist_pix:
+                path.append(((bite[-1][0] + path[-1][0]) / 2, (bite[-1][1] + path[-1][1]) / 2))
+                debug("sekani")
 
-            while path:
-                while dist_pix(bite[-1], path[-1]) > maxdist_pix:
-                    path.append(((bite[-1][0] + path[-1][0]) / 2, (bite[-1][1] + path[-1][1]) / 2))
-                    debug("sekani")
+            x_range2 = [0, 0]
+            y_range2 = [0, 0]
+            x_range2[0] = min(x_range[0], path[-1][0] - radius)
+            x_range2[1] = max(x_range[1], path[-1][0] + radius)
+            y_range2[0] = min(y_range[0], path[-1][1] - radius)
+            y_range2[1] = max(y_range[1], path[-1][1] + radius)
+            
+            if len_pix(x_range2) > maxwidth_pix or len_pix(y_range2) > maxheight_pix:
+                path.append(bite[-1])
+                debug("   moc dlouhe")
+                break
 
-                x_range2 = [0, 0]
-                y_range2 = [0, 0]
-                x_range2[0] = min(x_range[0], path[-1][0] - radius)
-                x_range2[1] = max(x_range[1], path[-1][0] + radius)
-                y_range2[0] = min(y_range[0], path[-1][1] - radius)
-                y_range2[1] = max(y_range[1], path[-1][1] + radius)
-                
-                if len_pix(x_range2) > maxwidth_pix or len_pix(y_range2) > maxheight_pix:
-                    path.append(bite[-1])
-                    debug("   moc dlouhe")
-                    break
+            bite.append(path.pop())
+            x_range = x_range2
+            y_range = y_range2
 
-                bite.append(path.pop())
-                x_range = x_range2
-                y_range = y_range2
+        white = (255, 255, 255)
+        print("bite", bite)
 
-            white = (255, 255, 255)
-            print("bite", bite)
+        big = Image.new("RGBA", (len_pix(x_range), len_pix(y_range)), color=white)
 
-            big = Image.new("RGBA", (len_pix(x_range), len_pix(y_range)), color=white)
+        last = bite[0]
+        for p in bite[1:]:
 
-            last = bite[0]
-            for p in bite[1:]:
+            x1, _, _, x2 = sorted([last[0] - radius, last[0] + radius, p[0] - radius, p[0] + radius])
+            y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
 
-                x1, _, _, x2 = sorted([last[0] - radius, last[0] + radius, p[0] - radius, p[0] + radius])
-                y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
+            im = td.get_rect(x1, y1, x2, y2)
+            debug((x1, y1, x2, y2))
+            debug(im.size, x1, y1, x2, y2)
 
-                im = self.get_rect(x1, y1, x2, y2)
-                debug((x1, y1, x2, y2))
-                debug(im.size, x1, y1, x2, y2)
+            mask = Image.new("1", im.size)
+            draw = ImageDraw.Draw(mask)
 
-                mask = Image.new("1", im.size)
-                draw = ImageDraw.Draw(mask)
+            last_pix = [(last[0] - x1) * td.xres, (last[1] - y1) * td.yres]
+            p_pix = [(p[0] - x1) * td.xres, (p[1] - y1) * td.yres]
 
-                last_pix = [(last[0] - x1) * self.xres, (last[1] - y1) * self.yres]
-                p_pix = [(p[0] - x1) * self.xres, (p[1] - y1) * self.yres]
-
-                draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=int(2*radius*self.xres), fill=1)
+            draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=int(2*radius*td.xres), fill=1)
 
 
-                draw_circle(draw, last_pix, radius * self.xres)
-                draw_circle(draw, p_pix, radius * self.xres)
+            draw_circle(draw, last_pix, radius * td.xres)
+            draw_circle(draw, p_pix, radius * td.xres)
 
-                del draw
-
-                
-                big.paste(im, (int((x1 - x_range[0]) * self.xres), int((y1 - y_range[0]) * self.yres)), mask=mask)
-
-                last = p
-
-            draw = ImageDraw.Draw(big)
-            last = bite[0]
-            for p in bite[1:]:
-                last_pix = [(last[0] - x_range[0]) * self.xres, (last[1] - y_range[0]) * self.yres]
-                p_pix = [(p[0] - x_range[0]) * self.xres, (p[1] - y_range[0]) * self.yres]
-                draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=3, fill=(255, 100, 0))
-                last = p
             del draw
 
-            angle = best_angle(bite, radius)
-            big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
-            big = crop_after_rotation(big, angle, radius, bite)
-            big2 = Image.new("RGBA", big.size, "white")
-            big2.paste(big, mask=big)
+            
+            big.paste(im, (int((x1 - x_range[0]) * td.xres), int((y1 - y_range[0]) * td.yres)), mask=mask)
 
-            yield big2
+            last = p
+
+        draw = ImageDraw.Draw(big)
+        last = bite[0]
+        for p in bite[1:]:
+            last_pix = [(last[0] - x_range[0]) * td.xres, (last[1] - y_range[0]) * td.yres]
+            p_pix = [(p[0] - x_range[0]) * td.xres, (p[1] - y_range[0]) * td.yres]
+            draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=3, fill=(255, 100, 0))
+            last = p
+        del draw
+
+        angle = best_angle(bite, radius)
+        big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
+        big = crop_after_rotation(big, angle, radius, bite)
+        big2 = Image.new("RGBA", big.size, "white")
+        big2.paste(big, mask=big)
+
+        yield big2
 
 
 def create_path_pdf(parts, filename):
@@ -323,8 +325,6 @@ def create_path_pdf(parts, filename):
     tdir.cleanup()
                 
 
-                
-        
         
 
         
