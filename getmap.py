@@ -7,12 +7,14 @@ from lxml import html
 from lxml import etree
 
 from PIL import Image, ImageDraw
-from math import floor, sqrt, sin, cos, pi
-#from latex import build_pdf
+from math import floor, sqrt
+from latex import build_pdf
 import tempfile
 
 from shapely.geometry import LineString, Point
 from shapely import affinity
+
+from concurrent.futures import ThreadPoolExecutor
 
 
 def debug(*s):
@@ -30,14 +32,14 @@ def run_js_file(filename):
     process = subprocess.Popen(["nodejs", filename], stdout=subprocess.PIPE)
     return process.communicate()[0].decode('utf8')
 
-def build_pdf(string, filename):
-    fd, tmp = tempfile.mkstemp()
-    with open(tmp, "w") as fout:
-        fout.write(string)
+#def build_pdf(string, filename):
+    #fd, tmp = tempfile.mkstemp()
+    #with open(tmp, "w") as fout:
+        #fout.write(string)
 
-    os.system("pdflatex " + tmp)
-    os.system("rm " + tmp)
-    os.system("mv " + os.path.basename(tmp) + ".pdf " + filename)
+    #os.system("pdflatex " + tmp)
+    #os.system("rm " + tmp)
+    #os.system("mv " + os.path.basename(tmp) + ".pdf " + filename)
 
 
 class TileDownloader(object):
@@ -123,7 +125,7 @@ class TileDownloader(object):
         return Image.open(tile_filename(x, y))
 
 
-    def get_rect(self, x1, y1, x2, y2):
+    def get_rect(self, x1, y1, x2, y2, parallel=False):
         big = Image.new("RGB", (int((x2-x1) * self.xres), int((y2-y1) * self.yres)))
         tiles_x1 = floor(x1)
         tiles_x2 = floor(x2)
@@ -133,10 +135,20 @@ class TileDownloader(object):
         xdiff_pix = int(self.xres * (x1 - tiles_x1))
         ydiff_pix = int(self.yres * (y1 - tiles_y1))
 
-        for y in range(tiles_y1, tiles_y2+1):
-            for x in range(tiles_x1, tiles_x2+1):
-                im = self.get_tile(x, y)
-                big.paste(self.get_tile(x, y), ((x-tiles_x1) * self.xres - xdiff_pix, (y-tiles_y1) * self.yres - ydiff_pix))
+        if parallel:
+            tiles_needed = [(x, y) for y in range(tiles_y1, tiles_y2+1) for x in range(tiles_x1, tiles_x2+1)]
+            
+            tpe = ThreadPoolExecutor(10)
+            images = tpe.map(self.get_tile, *zip(*tiles_needed))
+            for im, xy in zip(images, tiles_needed):
+                x, y = xy
+                big.paste(im, ((x-tiles_x1) * self.xres - xdiff_pix, (y-tiles_y1) * self.yres - ydiff_pix))
+
+        else:
+            for y in range(tiles_y1, tiles_y2+1):
+                for x in range(tiles_x1, tiles_x2+1):
+                    im = self.get_tile(x, y)
+                    big.paste(im, ((x-tiles_x1) * self.xres - xdiff_pix, (y-tiles_y1) * self.yres - ydiff_pix))
 
         return big
             
@@ -223,7 +235,6 @@ def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
         while path:
             while dist_pix(bite[-1], path[-1]) > maxdist_pix:
                 path.append(((bite[-1][0] + path[-1][0]) / 2, (bite[-1][1] + path[-1][1]) / 2))
-                debug("sekani")
 
             x_range2 = [0, 0]
             y_range2 = [0, 0]
@@ -234,7 +245,6 @@ def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
             
             if len_pix(x_range2) > maxwidth_pix or len_pix(y_range2) > maxheight_pix:
                 path.append(bite[-1])
-                debug("   moc dlouhe")
                 break
 
             bite.append(path.pop())
@@ -242,7 +252,6 @@ def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
             y_range = y_range2
 
         white = (255, 255, 255)
-        print("bite", bite)
 
         big = Image.new("RGBA", (len_pix(x_range), len_pix(y_range)), color=white)
 
@@ -252,9 +261,7 @@ def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
             x1, _, _, x2 = sorted([last[0] - radius, last[0] + radius, p[0] - radius, p[0] + radius])
             y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
 
-            im = td.get_rect(x1, y1, x2, y2)
-            debug((x1, y1, x2, y2))
-            debug(im.size, x1, y1, x2, y2)
+            im = td.get_rect(x1, y1, x2, y2, parallel=True)
 
             mask = Image.new("1", im.size)
             draw = ImageDraw.Draw(mask)
@@ -296,7 +303,7 @@ def path_surroundings(td, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
 def create_path_pdf(parts, filename):
     header = r'''
         \documentclass[a4paper]{article}
-        \usepackage[top=0.5cm, bottom=0.5cm, left=0.5cm, right=0.5cm]{geometry}
+        \usepackage[top=1.5cm, bottom=1.5cm, left=0.5cm, right=0.5cm]{geometry}
         \usepackage{graphicx}
         \sloppy
         \begin{document}
@@ -316,15 +323,20 @@ def create_path_pdf(parts, filename):
         \end{document}
     '''
 
-    #pdf = build_pdf(header + images + footer)
-    #pdf.save_to(filename)
+    pdf = build_pdf(header + images + footer)
+    pdf.save_to(filename)
     
-    build_pdf(header + images + footer, filename)
-    print(header + images + footer, filename)
+    #build_pdf(header + images + footer, filename)
 
     tdir.cleanup()
                 
 
+def cykloserver_gpx2path(filename):
+    with open(filename, "r") as fin:
+        gpx = "".join(fin.readlines()[1:])
+        root = etree.fromstring(gpx)
+        return [(float(e.get('lon')), float(e.get('lat'))) for e in root.getchildren()[0].getchildren()[0].getchildren()]
+        
         
 
         
