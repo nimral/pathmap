@@ -28,20 +28,38 @@ import pyproj
     #os.system("mv " + os.path.basename(tmp) + ".pdf " + filename)
 
 class MapDownloader:
+    '''Base class for map providers with maps consisting of image tiles'''
+
     def __init__(self):
         self.xres = None
         self.yres = None
 
 
     def lon_lat_to_tiles(self, lon, lat):
+        '''Should convert longitude and latitude to (x, y) tiles coordinates.
+
+        Tiles compose a rectangular grid. Numbers of the column
+        and row in which a tile lies should be equal to its upper left corner
+        coordinates.
+        '''
+        
         raise NotImplementedError("Please implement this method")
 
 
     def get_tile(self, x, y):
+        '''Should return a tile (PIL.Image) whose upper left corner has coordinates x, y'''
+
         raise NotImplementedError("Please implement this method")
 
 
     def get_rect(self, lon1, lat1, lon2, lat2, parallel=False):
+        '''Returns a PIL.Image of a rectangular map whose upper left and bottom
+        right corner correspond to longitude, latitude (lon1, lat1) and (lon2,
+        lat2) respectively.
+
+        parallel=True tries to speed up the acquiring of tiles by running the
+        needed calls to get_tile() asynchronously. Default False.
+        '''
         
         x1, y1 = self.lon_lat_to_tiles(lon1, lat1)
         x2, y2 = self.lon_lat_to_tiles(lon2, lat2)
@@ -50,8 +68,16 @@ class MapDownloader:
 
 
     def get_rect_tiles(self, x1, y1, x2, y2, parallel=False):
+        '''Returns a PIL.Image of a rectangular map whose upper left and bottom right
+        corner have tiles coordinates (x1, y1) and (x2, y2) respectively.
+
+        parallel=True tries to speed up the acquiring of tiles by running the needed calls
+        to get_tile() asynchronously. Default False.
+        '''
 
         big = Image.new("RGB", (int((x2-x1) * self.xres), int((y2-y1) * self.yres)))
+
+        #rows and columns of tiles containing (x1, y1) and (x2, y2)
         tiles_x1 = floor(x1)
         tiles_x2 = floor(x2)
         tiles_y1 = floor(y1)
@@ -60,6 +86,7 @@ class MapDownloader:
         xdiff_pix = int(self.xres * (x1 - tiles_x1))
         ydiff_pix = int(self.yres * (y1 - tiles_y1))
 
+        #acquire each tile needed and paste it into big
         if parallel:
             tiles_needed = [(x, y) for y in range(tiles_y1, tiles_y2+1) for x in range(tiles_x1, tiles_x2+1)]
             
@@ -78,6 +105,8 @@ class MapDownloader:
         return big
 
 class CykloserverMapDownloader(MapDownloader):
+    '''Can download maps from cykloserver.cz/cykloatlas'''
+
     def __init__(self):
 
         self.xres = 256
@@ -85,19 +114,31 @@ class CykloserverMapDownloader(MapDownloader):
 
         self.last_token_acquired = 0
 
+        #longitude latitude
         self.proj_to = pyproj.Proj("+init=EPSG:3857")
+
+        #display projection
         self.proj_from = pyproj.Proj("+init=EPSG:4326")
 
+        #beta_x and beta_y for affine transformation of coordinates (after
+        #changing projection) yielding the tiles coordinates. Approximated by
+        #linear regression.
         self.bx = [4.09597540e+03, 2.04431397e-04]
         self.by = [4.09571512e+03, -2.04373254e-04]
 
 
     def _run_js_file(self, filename):
+        '''Runs nodejs on filename and returns its output'''
+
         process = subprocess.Popen(["nodejs", filename], stdout=subprocess.PIPE)
         return process.communicate()[0].decode('utf8')
 
 
     def _url2dict(self, url):
+        '''Builds a dict from url parameters.
+        
+        Example: http://server.com/index.php?a=16&b=13 -> {'a': '16', 'b': '13'}'''
+
         a, b = url.split("?", 1)
         return {
             "url": a,
@@ -106,6 +147,9 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def _renew_token(self):
+        '''Prepares requests.Session self.s for subsequent downloading of
+        tiles
+        '''
 
         self.s = requests.Session()
         url_atlas = 'http://www.cykloserver.cz/cykloatlas/'
@@ -119,12 +163,11 @@ class CykloserverMapDownloader(MapDownloader):
         #type="text/javascript"></script>
         url = [x for x in root.xpath('.//script') if x.get('src') and 'readauthloader2' in x.get('src')][0].get('src')
         self.atributes = self._url2dict(url)["atributes"]
-        #self.tt_id = self.atributes["id"]
-        #self.tt_hkey = self.atributes["hkey"]
         
-        # not sure if needed
         self.s.get('http://www.cykloserver.cz/cykloatlas/readautha4b2.php', params=self.atributes)
 
+        #http://www.cykloserver.cz/cykloatlas/tagetpass2.php sends javascript
+        #which needs to be evaluted in order to get password
         with open("file", "w") as fout:
             fout.write(self.s.post('http://www.cykloserver.cz/cykloatlas/tagetpass2.php', data=self.atributes).content.decode('utf8'))
             fout.write("console.log(_tt_pass)")
@@ -133,6 +176,8 @@ class CykloserverMapDownloader(MapDownloader):
         atributes = self.atributes.copy()
         atributes["pass"] = tt_pass
 
+        #http://www.cykloserver.cz/cykloatlas/tagettoken2.php sends tokens
+        #which need to be "descrambled". Easiest by evaluating the javascript.
         with open("file2", "w") as fout:
             fout.write("""
             function __tt_descramble(data) {
@@ -159,44 +204,85 @@ class CykloserverMapDownloader(MapDownloader):
         tt_tokenm, tt_tokent, tt_tokenk = self._run_js_file("file2").split()
 
         self.s.get('http://webtiles.timepress.cz/set_token', params={"token": tt_tokenk}).content.decode('utf8')
+        #that's it. We should be ok for next 60 seconds.
 
 
     def lon_lat_to_tiles(self, lon, lat):
+        '''Converts longitude and latitude to (x, y) tiles coordinates.
 
-        print("lonlat", lon, lat)
+        Tiles compose a rectangular grid. Numbers of the column
+        and row in which a tile lies should be equal to its upper left corner
+        coordinates.
+        '''
+
         trans_x, trans_y = pyproj.transform(self.proj_from, self.proj_to, lon, lat)
-
 
         return (self.bx[0] + self.bx[1] * trans_x, self.by[0] + self.by[1] * trans_y)
 
 
     def get_tile(self, x, y):
+        '''Returns a tile (PIL.Image) whose upper left corner has coordinates x, y'''
         
         def tile_filename(x, y):
             return "tile_{}_{}.png".format(x, y)
 
-        if not os.path.isfile(tile_filename(x, y)):
+        im = None
+        while True:
+            try:
+                im = Image.open(tile_filename(x, y))
+            except (IOError, FileNotFoundError):
+            #if not os.path.isfile(tile_filename(x, y)):
 
-            if time.time() - self.last_token_acquired > 60:
-                self._renew_token()
-            
-            r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/' + str(x) + '/' + str(y))
+                if time.time() - self.last_token_acquired > 60:
+                    self._renew_token()
+                
+                r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/' + str(x) + '/' + str(y))
 
-            with open(tile_filename(x, y), "wb") as fout:
-                fout.write(r.content)
-
-        return Image.open(tile_filename(x, y))
+                with open(tile_filename(x, y), "wb") as fout:
+                    fout.write(r.content)
+            else:
+                return im
 
 
     def gpx2path(self, filename):
+        '''Returns list of (longitude, latitude) pairs stored as a trek in gpx file filename'''
+
         with open(filename, "r") as fin:
             gpx = "".join(fin.readlines()[1:])
             root = etree.fromstring(gpx)
             return [(float(e.get('lon')), float(e.get('lat'))) for e in root.getchildren()[0].getchildren()[0].getchildren()]
 
             
-        
-def path_surroundings(md, path, *, radius=130/256, maxwidth_pix=1000, maxheight_pix=800, maxdist_pix=500, shorten_by_rotating=True):
+def path_surroundings(md, path, *,
+                      radius_pix=130,
+                      maxwidth_pix=1000,
+                      maxheight_pix=800,
+                      maxdist_pix=500,
+                      path_color=(255, 100, 0),
+                      shorten_by_rotating=True):
+    '''Creates a generator of map images following a given path
+
+    Arguments:
+
+    md: MapDownloader, should provide get_rect() and get_rect_tiles() methods
+        returning map images and xres, yres properties specifying width and height
+        of a tile
+    path: list of (longitude, latitude) coordinates representing the trip for
+        which map should be generated
+    radius_pix: distance from the path in pixels which should be covered by the
+        generated map
+    maxwidth_pix: maximum width of one map part in pixels
+    maxheight_pix: maximum height of one map part in pixels
+    maxdist_pix: maximum distance between two consecutive points in path (if it
+        is higher, additional point gets inserted in between to allow split)
+    path_color: color as (R, G, B) tuple, with which the path should by drawn
+        into the map; or None if no path should be drawn.
+    shorten_by_rotating: whether to try to reduce height of the images by
+        rotating them. Consider path going from north to south: it is quite
+        high, but usually not very wide (2 * radius). By rotating it by 90°, we
+        can greatly reduce its height and thus maybe reduce the number of pages
+        of the pdf file generated later by create_path_pdf. Default True.
+    '''
 
     def len_pix(ran):
         return int((ran[1] - ran[0]) * md.xres)
@@ -204,17 +290,26 @@ def path_surroundings(md, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
         return sqrt(((p[0] - q[0]) * md.xres) ** 2 + ((p[1] - q[1]) * md.xres) ** 2)
     def draw_circle(draw, S, r, fill=1):
         draw.ellipse((S[0] - r, S[1] - r, S[0] + r, S[1] + r), fill)
+        
+    radius = radius_pix / md.xres
 
     path = [md.lon_lat_to_tiles(lon, lat) for lon, lat in reversed(path)]
     while path:
+        
+        #part of the map which is not bigger than the limits
+        #(we shouldn't bite off more than we can chew)
         bite = [path.pop()]
+
+        #bounds of the current part of the map (tiles coordinates)
         x_range = [bite[0][0] - radius, bite[0][0] + radius]
         y_range = [bite[0][1] - radius, bite[0][1] + radius]
 
         while path:
+            #split first line of path until it is short enough
             while dist_pix(bite[-1], path[-1]) > maxdist_pix:
                 path.append(((bite[-1][0] + path[-1][0]) / 2, (bite[-1][1] + path[-1][1]) / 2))
 
+            #how will the ranges look like after we bite off the next point of path
             x_range2 = [0, 0]
             y_range2 = [0, 0]
             x_range2[0] = min(x_range[0], path[-1][0] - radius)
@@ -222,63 +317,90 @@ def path_surroundings(md, path, *, radius=130/256, maxwidth_pix=1000, maxheight_
             y_range2[0] = min(y_range[0], path[-1][1] - radius)
             y_range2[1] = max(y_range[1], path[-1][1] + radius)
             
+            #if the map would become too big
             if len_pix(x_range2) > maxwidth_pix or len_pix(y_range2) > maxheight_pix:
+                #stop building this bite
+                #also copy the last point of bite back to path (starting point
+                #of the next bite should be the same as the ending point of
+                #this one)
                 path.append(bite[-1])
                 break
-
-            bite.append(path.pop())
-            x_range = x_range2
-            y_range = y_range2
+            else:
+                bite.append(path.pop())
+                x_range = x_range2
+                y_range = y_range2
 
         white = (255, 255, 255)
-
         big = Image.new("RGBA", (len_pix(x_range), len_pix(y_range)), color=white)
 
         last = bite[0]
+        #for each line (last--p) in bite get map of its surroundings (max
+        #distance of radius) and copy it to big
         for p in bite[1:]:
 
+            #get bounds of map covering this line
             x1, _, _, x2 = sorted([last[0] - radius, last[0] + radius, p[0] - radius, p[0] + radius])
             y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
 
-            im = md.get_rect_tiles(x1, y1, x2, y2, parallel=True)
+            #get the map rectangle for this line
+            im = md.get_rect_tiles(x1, y1, x2, y2, parallel=False)
 
+            #we would like to copy only surroundings, not the whole rectangle
+            #so we create a mask -- black and white image of the same size.
+            #area which is white in the mask gets copied
             mask = Image.new("1", im.size)
             draw = ImageDraw.Draw(mask)
 
+            #convert coordinates of last and p from tiles to pixels with origin
+            #in upper left corner of im
             last_pix = [(last[0] - x1) * md.xres, (last[1] - y1) * md.yres]
             p_pix = [(p[0] - x1) * md.xres, (p[1] - y1) * md.yres]
 
+            #draw very thick line and circles at the end points
             draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=int(2*radius*md.xres), fill=1)
-
-
             draw_circle(draw, last_pix, radius * md.xres)
             draw_circle(draw, p_pix, radius * md.xres)
 
+            #mask is ready
             del draw
 
-            
+            #paste the surroundings to the right place in the big image (note
+            #(x_range[0], y_range[0]) are the tiles coordinates of the upper
+            #left corner of big)
             big.paste(im, (int((x1 - x_range[0]) * md.xres), int((y1 - y_range[0]) * md.yres)), mask=mask)
 
             last = p
 
-        draw = ImageDraw.Draw(big)
-        last = bite[0]
-        for p in bite[1:]:
-            last_pix = [(last[0] - x_range[0]) * md.xres, (last[1] - y_range[0]) * md.yres]
-            p_pix = [(p[0] - x_range[0]) * md.xres, (p[1] - y_range[0]) * md.yres]
-            draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=3, fill=(255, 100, 0))
-            last = p
-        del draw
+        if path_color:
+            #draw path to map
+            draw = ImageDraw.Draw(big)
+            last = bite[0]
+            for p in bite[1:]:
+                last_pix = [(last[0] - x_range[0]) * md.xres, (last[1] - y_range[0]) * md.yres]
+                p_pix = [(p[0] - x_range[0]) * md.xres, (p[1] - y_range[0]) * md.yres]
+                draw.line((last_pix[0], last_pix[1], p_pix[0], p_pix[1]), width=3, fill=path_color)
+                last = p
+            del draw
 
-        if shorten_by_rotating:
+        if not shorten_by_rotating:
+            yield big
+        else:
+            #attempt to lower the height of the image by rotating the
+            #surroundings and cropping
             angle = _best_angle(bite, radius, maxwidth_pix/md.xres, maxheight_pix/md.yres)
             big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
+            
+            #rotating will usually make the image bigger (new area gets filled
+            #with alpha=0)
+            #it needs to be cropped to include the surroundings only
             big = _crop_after_rotation(md, big, angle, radius, bite)
+        
+            #the cropped area will usually contain some of the alpha=0
+            #we remove it by pasting to new white image (alpha specifies mask,
+            #alpha=0 does not get #copied)
             big2 = Image.new("RGBA", big.size, "white")
             big2.paste(big, mask=big)
             yield big2
-        else:
-            yield big
 
 
 def _best_angle(bite, radius, maxwidth, maxheight):
