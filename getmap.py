@@ -28,7 +28,7 @@ import pyproj
     #os.system("mv " + os.path.basename(tmp) + ".pdf " + filename)
 
 class MapDownloader:
-    '''Base class for map providers with maps consisting of image tiles'''
+    """Base class for map providers with maps consisting of image tiles"""
 
     def __init__(self):
         self.xres = None
@@ -36,30 +36,30 @@ class MapDownloader:
 
 
     def lon_lat_to_tiles(self, lon, lat):
-        '''Should convert longitude and latitude to (x, y) tiles coordinates.
+        """Should convert longitude and latitude to (x, y) tiles coordinates.
 
         Tiles compose a rectangular grid. Numbers of the column
         and row in which a tile lies should be equal to its upper left corner
         coordinates.
-        '''
+        """
         
         raise NotImplementedError("Please implement this method")
 
 
     def get_tile(self, x, y):
-        '''Should return a tile (PIL.Image) whose upper left corner has coordinates x, y'''
+        """Should return a tile (PIL.Image) whose upper left corner has coordinates x, y"""
 
         raise NotImplementedError("Please implement this method")
 
 
     def get_rect(self, lon1, lat1, lon2, lat2, parallel=False):
-        '''Returns a PIL.Image of a rectangular map whose upper left and bottom
+        """Return a PIL.Image of a rectangular map whose upper left and bottom
         right corner correspond to longitude, latitude (lon1, lat1) and (lon2,
         lat2) respectively.
 
         parallel=True tries to speed up the acquiring of tiles by running the
         needed calls to get_tile() asynchronously. Default False.
-        '''
+        """
         
         x1, y1 = self.lon_lat_to_tiles(lon1, lat1)
         x2, y2 = self.lon_lat_to_tiles(lon2, lat2)
@@ -68,12 +68,12 @@ class MapDownloader:
 
 
     def get_rect_tiles(self, x1, y1, x2, y2, parallel=False):
-        '''Returns a PIL.Image of a rectangular map whose upper left and bottom right
+        """Return a PIL.Image of a rectangular map whose upper left and bottom right
         corner have tiles coordinates (x1, y1) and (x2, y2) respectively.
 
-        parallel=True tries to speed up the acquiring of tiles by running the needed calls
-        to get_tile() asynchronously. Default False.
-        '''
+        If parallel=True: try to speed up the acquiring of tiles by running the
+        needed calls to get_tile() asynchronously. Default False.
+        """
 
         big = Image.new("RGB", (int((x2-x1) * self.xres), int((y2-y1) * self.yres)))
 
@@ -105,7 +105,7 @@ class MapDownloader:
         return big
 
 class CykloserverMapDownloader(MapDownloader):
-    '''Can download maps from cykloserver.cz/cykloatlas'''
+    """Can download maps from cykloserver.cz/cykloatlas"""
 
     def __init__(self):
 
@@ -128,16 +128,16 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def _run_js_file(self, filename):
-        '''Runs nodejs on filename and returns its output'''
+        """Run nodejs on filename and return its output"""
 
         process = subprocess.Popen(["nodejs", filename], stdout=subprocess.PIPE)
         return process.communicate()[0].decode('utf8')
 
 
     def _url2dict(self, url):
-        '''Builds a dict from url parameters.
+        """Build a dict from url parameters.
         
-        Example: http://server.com/index.php?a=16&b=13 -> {'a': '16', 'b': '13'}'''
+        Example: http://server.com/index.php?a=16&b=13 -> {'a': '16', 'b': '13'}"""
 
         a, b = url.split("?", 1)
         return {
@@ -147,9 +147,9 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def _renew_token(self):
-        '''Prepares requests.Session self.s for subsequent downloading of
+        """Prepare requests.Session self.s for subsequent downloading of
         tiles
-        '''
+        """
 
         self.s = requests.Session()
         url_atlas = 'http://www.cykloserver.cz/cykloatlas/'
@@ -208,12 +208,12 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def lon_lat_to_tiles(self, lon, lat):
-        '''Converts longitude and latitude to (x, y) tiles coordinates.
+        """Convert longitude and latitude to (x, y) tiles coordinates.
 
         Tiles compose a rectangular grid. Numbers of the column
         and row in which a tile lies should be equal to its upper left corner
         coordinates.
-        '''
+        """
 
         trans_x, trans_y = pyproj.transform(self.proj_from, self.proj_to, lon, lat)
 
@@ -221,7 +221,7 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def get_tile(self, x, y):
-        '''Returns a tile (PIL.Image) whose upper left corner has coordinates x, y'''
+        """Return a tile (PIL.Image) whose upper left corner has coordinates x, y"""
         
         def tile_filename(x, y):
             return "tile_{}_{}.png".format(x, y)
@@ -245,7 +245,7 @@ class CykloserverMapDownloader(MapDownloader):
 
 
     def gpx2path(self, filename):
-        '''Returns list of (longitude, latitude) pairs stored as a trek in gpx file filename'''
+        """Return list of (longitude, latitude) pairs stored as a trek in gpx file filename"""
 
         with open(filename, "r") as fin:
             gpx = "".join(fin.readlines()[1:])
@@ -260,7 +260,7 @@ def path_surroundings(md, path, *,
                       maxdist_pix=500,
                       path_color=(255, 100, 0),
                       shorten_by_rotating=True):
-    '''Creates a generator of map images following a given path
+    """Create a generator of map images following a given path
 
     Arguments:
 
@@ -282,7 +282,7 @@ def path_surroundings(md, path, *,
         high, but usually not very wide (2 * radius). By rotating it by 90°, we
         can greatly reduce its height and thus maybe reduce the number of pages
         of the pdf file generated later by create_path_pdf. Default True.
-    '''
+    """
 
     def len_pix(ran):
         return int((ran[1] - ran[0]) * md.xres)
@@ -387,13 +387,16 @@ def path_surroundings(md, path, *,
         else:
             #attempt to lower the height of the image by rotating the
             #surroundings and cropping
-            angle = _best_angle(bite, radius, maxwidth_pix/md.xres, maxheight_pix/md.yres)
+            
+            surroundings = LineString(bite).buffer(radius)
+
+            angle = _best_angle(surroundings, maxwidth_pix/md.xres, maxheight_pix/md.yres)
             big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
             
             #rotating will usually make the image bigger (new area gets filled
             #with alpha=0)
             #it needs to be cropped to include the surroundings only
-            big = _crop_after_rotation(md, big, angle, radius, bite)
+            big = _crop_after_rotation(big, angle, md.xres, md.yres, surroundings)
         
             #the cropped area will usually contain some of the alpha=0
             #we remove it by pasting to new white image (alpha specifies mask,
@@ -403,9 +406,22 @@ def path_surroundings(md, path, *,
             yield big2
 
 
-def _best_angle(bite, radius, maxwidth, maxheight):
-    line = LineString(bite)
-    surroundings = line.buffer(radius)
+def _best_angle(surroundings, maxwidth, maxheight):
+    """Find the angle by which surroundings should be rotated.
+    
+    Try to minimalize surroundings' height while keeping its width
+    under maxwidth. Also prefer smaller rotations over bigger ones.
+
+    Arguments:
+
+    surroundings: shapely.geometry.polygon.Polygon
+    maxwidth: maximum allowed width of the surroundings bounding box
+    maxheight: maximum allowed height of the surroundings bounding box
+
+    Returns:
+    
+    angle in degrees (counterclockwise)
+    """
     
     minheight = maxheight
     best = 0
@@ -425,50 +441,78 @@ def _best_angle(bite, radius, maxwidth, maxheight):
     return -best
             
 
-def _crop_after_rotation(md, im, angle, radius, bite):
+def _crop_after_rotation(im, angle, xres, yres, surroundings):
+    """Crop image to the bounding box of bite's surroundings.
 
-    line = LineString(bite)
-    surroundings = line.buffer(radius)
+    Arguments:
 
+    im: PIL.Image, rotated map part
+    angle: by which the map has been rotated, in degrees (counterclockwise)
+    xres: width of one tile in pixels
+    yres: height of one tile in pixels
+    surroundings: shapely.geometry.polygon.Polygon
+    """
+
+    #before rotation
     x1, y1, x2, y2 = surroundings.bounds
     old_bb_upper_left = Point(x1, y1)
     old_bb_upper_right = Point(x2, y1)
     old_bb_bottom_left = Point(x1, y2)
-    old_bb_bottom_right = Point(x2, y2)
     old_bb_center = ((x1+x2)/2, (y1+y2)/2)
 
+    #shapely y-axis goes upwards
     shapely_angle = -angle
 
+    #after rotation
     x1, y1, x2, y2 = affinity.rotate(surroundings, shapely_angle, origin=old_bb_center).bounds
     crop_upper_left = Point(x1, y1)
     crop_width = x2 - x1
     crop_height = y2 - y1
 
-    p1 = None
-    p2 = None
+    #points where old bounding box of surroundings (i.e. the old image) touches
+    #its bounding box after rotation
+    tl = None #touch at the left side of the new bounding box
+    tt = None #touch at the top side of the new bounding box
     if angle > 0:
-        p1 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
-        p2 = affinity.rotate(old_bb_upper_right, shapely_angle, origin=old_bb_center)
+        tl = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+        tt = affinity.rotate(old_bb_upper_right, shapely_angle, origin=old_bb_center)
     else:
-        p1 = affinity.rotate(old_bb_bottom_left, shapely_angle, origin=old_bb_center)
-        p2 = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
+        tl = affinity.rotate(old_bb_bottom_left, shapely_angle, origin=old_bb_center)
+        tt = affinity.rotate(old_bb_upper_left, shapely_angle, origin=old_bb_center)
 
-    b = (crop_upper_left.x - p1.x, crop_upper_left.y - p2.y)
+    #upper left corner of ther new bounding box
+    new_bb_upper_left = Point(tl.x, tt.y)
 
-    crop_box = (int(md.xres * x) for x in (b[0], b[1], b[0] + crop_width, b[1] + crop_height))
+    #from these we get b: upper left corner of the crop area relative to new_bb_upper_left
+    b = (crop_upper_left.x - new_bb_upper_left.x, crop_upper_left.y - new_bb_upper_left.y)
+
+    #crop rectangle in pixels relative to new_bb_upper_left
+    crop_box = [int(x) for x in [
+        b[0] * xres,
+        b[1] * yres,
+        (b[0] + crop_width) * xres,
+        (b[1] + crop_height) * yres
+    ]]
     cropped = im.crop(box=crop_box)
     cropped.load()
     return cropped
 
 
 def create_path_pdf(parts, filename):
-    header = r'''
+    """Create a pdf file filename with images in parts.
+
+    Arguments:
+    
+    parts: list of Image.PIL
+    filename: str, name of the resulting file
+    """
+    header = r"""
         \documentclass[a4paper]{article}
         \usepackage[top=1.5cm, bottom=1.5cm, left=0.5cm, right=0.5cm]{geometry}
         \usepackage{graphicx}
         \sloppy
         \begin{document}
-    '''
+    """
 
     tdir = tempfile.TemporaryDirectory()
 
@@ -480,13 +524,11 @@ def create_path_pdf(parts, filename):
         
     images = "\n\n".join('\includegraphics[scale=0.5]{' + fname + '}' for fname in fnames)
 
-    footer = r'''
+    footer = r"""
         \end{document}
-    '''
+    """
 
-    pdf = build_pdf(header + images + footer)
+    pdf = build_pdf("".join((header, images, footer)))
     pdf.save_to(filename)
     
-    #build_pdf(header + images + footer, filename)
-
     tdir.cleanup()
