@@ -15,6 +15,8 @@ class CykloserverMapDownloader(MapDownloader):
 
     def __init__(self):
 
+        self.s = requests.Session()
+
         self.xres = 256
         self.yres = 256
 
@@ -71,6 +73,8 @@ class CykloserverMapDownloader(MapDownloader):
         tiles
         """
 
+        if self.s:
+            self.s.close()
         self.s = requests.Session()
         url_atlas = 'http://www.cykloserver.cz/cykloatlas/'
         r_atlas = self.s.get(url_atlas)
@@ -139,28 +143,36 @@ class CykloserverMapDownloader(MapDownloader):
         return (self.bx[0] + self.bx[1] * trans_x, self.by[0] + self.by[1] * trans_y)
 
 
-    def get_tile(self, x, y, cache=True):
-        """Return a tile (PIL.Image) whose upper left corner has coordinates x, y"""
+    def _download_tile(self, x, y, filename):
+        """Downloads a tile whose upper left corner has coordinates x, y
         
-        def tile_filename(x, y):
-            return "tile_{}_{}.png".format(x, y)
+        Tile gets saved as filename."""
 
+        if time.time() - self.last_token_acquired > 60:
+            self._renew_token()
+        
+        r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/{}/{}'.format(x, y))
+
+        with open(filename, "wb") as fout:
+            fout.write(r.content)
+
+
+    def _tile_filename(self, x, y):
+        return "tile_{}_{}.png".format(x, y)
+
+
+    def get_tile(self, x, y):
+        """Return a tile (PIL.Image) whose upper left corner has coordinates x, y"""
+
+        filename = self._tile_filename(x, y)
         im = None
         while True:
             try:
-                if not cache:
-                    raise FileNotFoundError
-                im = Image.open(tile_filename(x, y))
+                im = Image.open(filename)
+
             except (IOError, FileNotFoundError):
+                self._download_tile(x, y, filename)
 
-                if time.time() - self.last_token_acquired > 60:
-                    self._renew_token()
-                
-                r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/' + str(x) + '/' + str(y))
-
-                if cache:
-                    with open(tile_filename(x, y), "wb") as fout:
-                        fout.write(r.content)
             else:
                 return im
 
