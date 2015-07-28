@@ -139,7 +139,7 @@ class CykloserverMapDownloader(MapDownloader):
         return (self.bx[0] + self.bx[1] * trans_x, self.by[0] + self.by[1] * trans_y)
 
 
-    def get_tile(self, x, y):
+    def get_tile(self, x, y, cache=True):
         """Return a tile (PIL.Image) whose upper left corner has coordinates x, y"""
         
         def tile_filename(x, y):
@@ -148,6 +148,8 @@ class CykloserverMapDownloader(MapDownloader):
         im = None
         while True:
             try:
+                if not cache:
+                    raise FileNotFoundError
                 im = Image.open(tile_filename(x, y))
             except (IOError, FileNotFoundError):
 
@@ -156,8 +158,9 @@ class CykloserverMapDownloader(MapDownloader):
                 
                 r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/' + str(x) + '/' + str(y))
 
-                with open(tile_filename(x, y), "wb") as fout:
-                    fout.write(r.content)
+                if cache:
+                    with open(tile_filename(x, y), "wb") as fout:
+                        fout.write(r.content)
             else:
                 return im
 
