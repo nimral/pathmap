@@ -33,11 +33,11 @@ class CykloserverMapDownloader(MapDownloader):
         self.by = [4.09571512e+03, -2.04373254e-04]
 
 
-    def _run_js_file(self, filename):
-        """Run nodejs on filename and return its output"""
+    def _get_js_output(self, script):
+        """Run script in nodejs and return its output"""
 
-        process = subprocess.Popen(["nodejs", filename], stdout=subprocess.PIPE)
-        return process.communicate()[0].decode('utf8')
+        process = subprocess.Popen(["nodejs"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        return process.communicate(input=script.encode('utf8'))[0].decode('utf8')
 
 
     def _url2dict(self, url):
@@ -74,18 +74,17 @@ class CykloserverMapDownloader(MapDownloader):
 
         #http://www.cykloserver.cz/cykloatlas/tagetpass2.php sends javascript
         #which needs to be evaluted in order to get password
-        with open("file", "w") as fout:
-            fout.write(self.s.post('http://www.cykloserver.cz/cykloatlas/tagetpass2.php', data=self.atributes).content.decode('utf8'))
-            fout.write("console.log(_tt_pass)")
-        tt_pass = self._run_js_file("file").strip()
+        script = self.s.post('http://www.cykloserver.cz/cykloatlas/tagetpass2.php', data=self.atributes).content.decode('utf8')
+        script += "console.log(_tt_pass)"
+        tt_pass = self._get_js_output(script).strip()
 
         atributes = self.atributes.copy()
         atributes["pass"] = tt_pass
 
         #http://www.cykloserver.cz/cykloatlas/tagettoken2.php sends tokens
         #which need to be "descrambled". Easiest by evaluating the javascript.
-        with open("file2", "w") as fout:
-            fout.write("""
+        script_parts = []
+        script_parts.append("""
             function __tt_descramble(data) {
                     var res = '';
                     
@@ -101,13 +100,13 @@ class CykloserverMapDownloader(MapDownloader):
                     
                     return res;
             }""")
-            fout.write(self.s.post('http://www.cykloserver.cz/cykloatlas/tagettoken2.php', data=atributes).content.decode('utf8'))
-            fout.write("""
+        script_parts.append(self.s.post('http://www.cykloserver.cz/cykloatlas/tagettoken2.php', data=atributes).content.decode('utf8'))
+        script_parts.append("""
                 console.log(__tt_tokenm)
                 console.log(__tt_tokent)
                 console.log(__tt_tokenk)
             """)
-        tt_tokenm, tt_tokent, tt_tokenk = self._run_js_file("file2").split()
+        tt_tokenm, tt_tokent, tt_tokenk = self._get_js_output("\n".join(script_parts)).split()
 
         self.s.get('http://webtiles.timepress.cz/set_token', params={"token": tt_tokenk}).content.decode('utf8')
         #that's it. We should be ok for next 60 seconds.
