@@ -45,7 +45,21 @@ class CykloserverMapDownloader(MapDownloader):
         
         Example: http://server.com/index.php?a=16&b=13 -> {'a': '16', 'b': '13'}"""
 
+        default = {
+            "url": url,
+            "atributes": {}
+        }
+
+        if '?' not in url:
+            return default
+
         a, b = url.split("?", 1)
+        
+        if not b:
+            d = default.copy()
+            d["url"] = a
+            return d
+
         return {
             "url": a,
             "atributes": {y[0]: y[1] for y in [x.split("=") for x in b.split("&")]},

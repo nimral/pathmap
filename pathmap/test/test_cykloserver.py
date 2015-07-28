@@ -33,10 +33,35 @@ class TestCykloserver(unittest.TestCase):
         """_url2dict should give known output for known input"""
 
         known_pairs = [
-            ("", {}),
-            ("http://server.com/", {}),
-            ("http://server.com/index.php?", {}),
-            ("http://server.com/index.php?par1=23&par2=45", {"par1": "23", "par2": "45"}),
+            (
+                "",
+                {
+                    "url": "",
+                    "atributes": {}
+                }
+            ),
+            (
+                "http://server.com/",
+                {
+                    "url": "http://server.com/",
+                    "atributes": {}
+                }
+            ),
+            (
+                "http://server.com/index.php?",
+                {
+                    "url": "http://server.com/index.php",
+                    "atributes": {}
+
+                }
+            ),
+            (
+                "http://server.com/index.php?par1=23&par2=45",
+                {
+                    "url": "http://server.com/index.php",
+                    "atributes": {"par1": "23", "par2": "45"}
+                }
+            ),
         ]
 
         for url, d in known_pairs:
