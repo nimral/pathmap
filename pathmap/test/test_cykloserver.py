@@ -1,6 +1,6 @@
 import unittest
-import filecmp
 import tempfile
+from PIL import Image
 from .. cykloserver import CykloserverMapDownloader
 
 
@@ -121,12 +121,53 @@ class TestCykloserver(unittest.TestCase):
         known = [(4492, 2804), (4497, 2804)]
 
         tdir = tempfile.TemporaryDirectory()
-        for x, y in known:
-            fname = "{}/{}".format(tdir.name, "file.png")
-            self.c._download_tile(x, y, fname)
-            self.assertEqual(filecmp.cmp(fname, self.c._tile_filename(x, y)), True)
+        try:
+            for x, y in known:
+                fname = "{}/{}".format(tdir.name, "file.png")
+                self.c._download_tile(x, y, fname)
+                im = Image.open(fname)
+                im2 = Image.open("pathmap/test/{}".format(self.c._tile_filename(x, y)))
+                self.assertEqual(im.tobytes() == im2.tobytes(), True)
 
-        tdir.cleanup()
+        finally:
+            tdir.cleanup()
+    
+
+    def test_get_tile_known(self):
+        """Returned tiles should be the same as known tiles"""
+
+        known = [(4492, 2804), (4497, 2804)]
+
+        tdir = tempfile.TemporaryDirectory()
+        try:
+            for x, y in known:
+                im = self.c.get_tile(x, y)
+                im2 = Image.open("pathmap/test/{}".format(self.c._tile_filename(x, y)))
+                self.assertEqual(im.tobytes() == im2.tobytes(), True)
+
+        finally:
+            tdir.cleanup()
+    
+
+    def test_gpx2path_known(self):
+        """Returned paths should be the same as known paths"""
+
+        gpxes = ["pathmap/test/passau1.gpx"]
+
+        paths = [[
+            (17.63872147, 49.22129716), (17.63339996, 49.21883049), (17.62653351,
+            49.21905474), (17.62104034, 49.21681221), (17.61743546, 49.22006384),
+            (17.60936737, 49.21759711), (17.5985527, 49.21670008), (17.59065628,
+            49.21647582), (17.58001328, 49.21557877), (17.578125, 49.21400891),
+            (17.57400513, 49.21445744), (17.56490707, 49.21086902), (17.55598068,
+            49.21008401), (17.55083084, 49.20795323), (17.54619598, 49.20694388)
+        ]]
+
+        for gpx, path in zip(gpxes, paths):
+            self.assertEqual(self.c.gpx2path(gpx), path)
+            
+
+
 
 
 if __name__ == '__main__':
