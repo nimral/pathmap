@@ -34,8 +34,8 @@ Command line options
 
 * `-r, --radius`: Radius of the covered map area around the path in pixels.
   Default 130 px.
-* `-c, --color`: Color of the path in map image. Default red.
-* `-o, --output`: Name of the output pdf file. Default <path.gpx>.pdf
+* `-c, --color`: Color of the path in map image. Default `red`.
+* `-o, --output`: Name of the output pdf file. Default `<path.gpx>.pdf`.
 
 Dependencies
 ------------
