@@ -31,10 +31,6 @@ will result in map pdf named `path.pdf`.
 Command line options
 --------------------
 
-        description="Creates a pdf with map pieces covering given path")
-    #parser.add_argument("-m", "--map-provider", default="cykloserver",
-                        #help="Map provider. Default (and only option so far) "
-                        #"is cykloserver.cz")
 * `-r, --radius`: Radius of the covered map area around the path in pixels.
   Default 130 px.
 * `-c, --color`: Color of the path in map image. Default red.
