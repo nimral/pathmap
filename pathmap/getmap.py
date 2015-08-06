@@ -4,6 +4,7 @@ from latex import build_pdf
 import tempfile
 from shapely.geometry import LineString, Point
 from shapely import affinity
+from concurrent.futures import ThreadPoolExecutor
 
 
 class MapDownloader:
@@ -31,7 +32,7 @@ class MapDownloader:
         raise NotImplementedError("Please implement this method")
 
 
-    def get_rect(self, lon1, lat1, lon2, lat2, parallel=False):
+    def get_rect(self, lon1, lat1, lon2, lat2, parallel=True):
         """Return a PIL.Image of a rectangular map whose upper left and bottom
         right corner correspond to longitude, latitude (lon1, lat1) and (lon2,
         lat2) respectively.
@@ -174,7 +175,7 @@ def path_surroundings(md, path, *,
             y1, _, _, y2 = sorted([last[1] - radius, last[1] + radius, p[1] - radius, p[1] + radius])
 
             #get the map rectangle for this line
-            im = md.get_rect_tiles(x1, y1, x2, y2, parallel=False)
+            im = md.get_rect_tiles(x1, y1, x2, y2, parallel=True)
 
             #we would like to copy only surroundings, not the whole rectangle
             #so we create a mask -- black and white image of the same size.

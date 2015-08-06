@@ -6,6 +6,7 @@ from lxml import html
 from lxml import etree
 from concurrent.futures import ThreadPoolExecutor
 import pyproj
+from threading import Lock
 
 from . getmap import MapDownloader
 
@@ -34,6 +35,7 @@ class CykloserverMapDownloader(MapDownloader):
         self.bx = [4.09597540e+03, 2.04431397e-04]
         self.by = [4.09571512e+03, -2.04373254e-04]
 
+        self._renew_lock = Lock()
 
     def _get_js_output(self, script):
         """Run script in nodejs and return its output"""
@@ -149,7 +151,10 @@ class CykloserverMapDownloader(MapDownloader):
         Tile gets saved as filename."""
 
         if time.time() - self.last_token_acquired > 60:
-            self._renew_token()
+            self._renew_lock.acquire()
+            if time.time() - self.last_token_acquired > 60:
+                self._renew_token()
+            self._renew_lock.release()
         
         r = self.s.get('http://webtiles.timepress.cz/cyklo_256/13/{}/{}'.format(x, y))
 
