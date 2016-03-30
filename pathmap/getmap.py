@@ -334,7 +334,7 @@ def create_path_pdf(parts, filename):
     """Create a pdf file filename with images in parts.
 
     Arguments:
-    
+
     parts: list of Image.PIL
     filename: str, name of the resulting file
     """
@@ -350,10 +350,11 @@ def create_path_pdf(parts, filename):
 
     fnames = []
     for i, im in enumerate(parts):
+        print(i, im)
         fname = "{}/{}.png".format(tdir.name, i)
         fnames.append(fname)
         im.save(fname)
-        
+
     images = "\n\n".join('\includegraphics[scale=0.5]{' + fname + '}' for fname in fnames)
 
     footer = r"""
@@ -362,5 +363,5 @@ def create_path_pdf(parts, filename):
 
     pdf = build_pdf("".join((header, images, footer)))
     pdf.save_to(filename)
-    
+
     tdir.cleanup()

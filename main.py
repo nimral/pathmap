@@ -1,5 +1,6 @@
 from pathmap import getmap
 from pathmap import cykloserver
+from pathmap import mapycz
 import argparse
 
 def main():
@@ -27,7 +28,8 @@ def main():
 
     radius = int(args["radius"])
 
-    g = cykloserver.CykloserverMapDownloader()
+    #g = cykloserver.CykloserverMapDownloader()
+    g = mapycz.MapyczMapDownloader()
     path = g.gpx2path(args["path.gpx"])
     s = list(getmap.path_surroundings(g, path, radius_pix=args["radius"],
             path_color=args["color"]))
